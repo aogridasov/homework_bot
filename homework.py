@@ -5,9 +5,11 @@ import sys
 import telegram
 import time
 
+from http import HTTPStatus
 from dotenv import load_dotenv
 
 import exceptions
+import settings
 
 
 load_dotenv()
@@ -17,16 +19,7 @@ PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
-RETRY_TIME = 20
-ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
-
-
-HOMEWORK_STATUSES = {
-    'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
-    'reviewing': 'Работа взята на проверку ревьюером.',
-    'rejected': 'Работа проверена: у ревьюера есть замечания.'
-}
 
 
 logging.basicConfig(
@@ -57,24 +50,33 @@ def get_api_answer(current_timestamp):
     """
     timestamp = current_timestamp or round(int(time.time()))
     params = {'from_date': timestamp}
-    response = requests.get(ENDPOINT, headers=HEADERS, params=params)
-    if response.status_code != 200:
-        raise exceptions.ApiIsNotRespondingException(
+    response = requests.get(settings.ENDPOINT, headers=HEADERS, params=params)
+    if response.status_code != HTTPStatus.OK:
+        raise exceptions.ApiIsNotRespondingError(
             'Ошибка подключения. Проблемы с доступом к API Яндекса.'
         )
-    print(response.json())
     return response.json()
 
 
 def check_response(response):
     """Проверяет корректность ответа API."""
-    if (not isinstance(response['homeworks'], list)
-            or (
-                response['homeworks']
-                and not isinstance(response['homeworks'][0], dict)
-    )
+    print(response)
+    if (
+        (
+            isinstance(response, list)
+            and not ('homeworks' in response[0].keys())
+        )
+        or (
+            isinstance(response, dict)
+            and not ('homeworks' in response.keys())
+        )
+        or (
+            response['homeworks']
+            and not isinstance(response['homeworks'][0], dict)
+        )
+        or not isinstance(response['homeworks'], list)
     ):
-        raise exceptions.ApiAnswerIsIncorrectException(
+        raise exceptions.ApiAnswerIsIncorrectError(
             'API прислал нетипичный ответ. Структура ответа некорректна.'
         )
     homeworks = response['homeworks']
@@ -99,14 +101,21 @@ def parse_status(homework):
             and (homework_name_key and status_key in homework.keys())):
         homework_name = homework[homework_name_key]
         homework_status = homework[status_key]
-        verdict = HOMEWORK_STATUSES[homework_status]
+
+        if homework_status in settings.HOMEWORK_STATUSES:
+            verdict = settings.HOMEWORK_STATUSES[homework_status]
+        else:
+            raise exceptions.HomeworkStatusIsInvalidError(
+                'Нетипичный статус проверки домашней работы.'
+            )
+
         return (
             f'Изменился статус проверки работы "{homework_name}". {verdict}'
         )
-    else:
-        raise KeyError(
-            'В ответе отсутствуют название и/или статус работы.'
-        )
+
+    raise KeyError(
+        'В ответе отсутствуют название и/или статус работы.'
+    )
 
 
 def check_tokens():
@@ -114,9 +123,7 @@ def check_tokens():
     Проверяет доступность элементов окружения.
     3 из 3 доступны - возвращает True, else - возвращает False.
     """
-    if all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)):
-        return True
-    return False
+    return all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID))
 
 
 def main():
@@ -157,7 +164,7 @@ def main():
                 logger.error(f' Сбой при отправке сообщения: {error}')
         finally:
             current_timestamp = round(time.time())
-            time.sleep(RETRY_TIME)
+            time.sleep(settings.RETRY_TIME)
 
 
 if __name__ == '__main__':
