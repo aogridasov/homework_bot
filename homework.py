@@ -30,7 +30,7 @@ HOMEWORK_STATUSES = {
 
 
 logging.basicConfig(
-    level=logging.INFO
+    level=logging.DEBUG
 )
 
 logger = logging.getLogger(__name__)
@@ -77,31 +77,36 @@ def check_response(response):
         raise exceptions.ApiAnswerIsIncorrectException(
             'API прислал нетипичный ответ. Структура ответа некорректна.'
         )
-
-    homework = response['homeworks'][0]
-    homework_name = 'lesson_name'
-    homework_status = 'status'
-    if not (homework_name or homework_status in homework.keys()):
-        raise exceptions.ApiAnswerIsIncorrectException(
-            ('API прислал нетипичный ответ.'
-             'Не найдено название домашки или её статус.')
-        )
+    homeworks = response['homeworks']
+    if homeworks:
+        homework = homeworks[0]
+    else:
+        raise IndexError(f'{homeworks}')
 
     return homework
 
 
 def parse_status(homework):
     """
-    Извлекает статус из ответа API статус конкретной дз.
+    Извлекает из ответа API статус конкретной дз.
     Формирует сообщение о статусе дз для отправки в ТГ.
     """
-    print(homework)
-    homework_name = homework['lesson_name']
-    print(homework_name)
-    homework_status = homework['status']
-    verdict = HOMEWORK_STATUSES[homework_status]
+    homework_name_key = 'homework_name'
+    status_key = 'status'
 
-    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
+    if (
+        isinstance(homework, dict)
+            and (homework_name_key and status_key in homework.keys())):
+        homework_name = homework[homework_name_key]
+        homework_status = homework[status_key]
+        verdict = HOMEWORK_STATUSES[homework_status]
+        return (
+            f'Изменился статус проверки работы "{homework_name}". {verdict}'
+        )
+    else:
+        raise KeyError(
+            'В ответе отсутствуют название и/или статус работы.'
+        )
 
 
 def check_tokens():
@@ -133,8 +138,8 @@ def main():
             homework = check_response(response)
             message = parse_status(homework)
         except IndexError as error:
-            logger.debug(
-                f'Обновлений нет. API прислал пустой словарь: {error}'
+            logger.info(
+                f'Обновлений нет. API прислал пустой список: {error}'
             )
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
