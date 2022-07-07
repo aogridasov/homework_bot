@@ -60,25 +60,22 @@ def get_api_answer(current_timestamp):
 
 def check_response(response):
     """Проверяет корректность ответа API."""
-    print(response)
-    if (
-        (
-            isinstance(response, list)
-            and not ('homeworks' in response[0].keys())
-        )
-        or (
-            isinstance(response, dict)
-            and not ('homeworks' in response.keys())
-        )
-        or (
-            response['homeworks']
-            and not isinstance(response['homeworks'][0], dict)
-        )
-        or not isinstance(response['homeworks'], list)
-    ):
+    if isinstance(response, list) and isinstance(response[0], dict):
+        response = response[0]
+
+    if 'homeworks' not in response:
         raise exceptions.ApiAnswerIsIncorrectError(
             'API прислал нетипичный ответ. Структура ответа некорректна.'
         )
+
+    if (
+        response['homeworks']
+        and not isinstance(response['homeworks'][0], dict)
+    ) or not isinstance(response['homeworks'], list):
+        raise exceptions.ApiAnswerIsIncorrectError(
+            'API прислал нетипичный ответ. Структура ответа некорректна.'
+        )
+
     homeworks = response['homeworks']
     if homeworks:
         homework = homeworks[0]
